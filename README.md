@@ -55,5 +55,3 @@ As a Computer Science student project, this is open for improvements! Future enh
 ---
 
 **Author:** Kritika Ghosh
-
-**License:** MIT
