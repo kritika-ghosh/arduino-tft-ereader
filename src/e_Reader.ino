@@ -12,11 +12,11 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 const int chipSelect = 10;
 SdFat sd;
 File bookFile;
-char fileNames[10][13]; 
+char fileNames[20][13]; // Expanded to 20 to allow handling larger libraries
 int fileCount = 0;
 int selectedIndex = 0;
 bool inMenu = true;
-uint32_t pageStartPos = 0; // The byte position where the current page started
+uint32_t pageStartPos = 0; 
 
 #define BLACK   0x0000
 #define WHITE   0xFFFF
@@ -39,14 +39,23 @@ void setup() {
 void loadFileList() {
     File root = sd.open("/");
     fileCount = 0;
-    while (fileCount < 10) {
+    // Scans up to 20 files to find valid text documents
+    while (fileCount < 20) {
         File entry = root.openNextFile();
         if (!entry) break;
-        entry.getName(fileNames[fileCount], 13);
+        
+        char tempName[13];
+        entry.getName(tempName, 13);
+        
         char upperName[13];
-        strcpy(upperName, fileNames[fileCount]);
+        strcpy(upperName, tempName);
         for(int i=0; upperName[i]; i++) upperName[i] = toupper(upperName[i]);
-        if (!entry.isDirectory() && strstr(upperName, ".TXT")) fileCount++;
+        
+        // Strict filter: Must be a file, must end with .TXT, and must NOT be a save file (.SV)
+        if (!entry.isDirectory() && strstr(upperName, ".TXT") && !strstr(upperName, ".SV")) {
+            strcpy(fileNames[fileCount], tempName);
+            fileCount++;
+        }
         entry.close();
     }
 }
@@ -62,7 +71,7 @@ void saveProgress() {
     sd.remove(sName);
     File f = sd.open(sName, FILE_WRITE);
     if (f) {
-        f.println(pageStartPos); // Save the START of the current page
+        f.println(pageStartPos); 
         f.close();
     }
 }
@@ -89,8 +98,21 @@ void openBook() {
 }
 
 void updateSelection() {
-    for (int i = 0; i < fileCount; i++) {
-        tft.setCursor(30, 65 + (i * 35)); 
+    // Dynamic sliding window configuration (4 items display window size)
+    int maxVisibleItems = 4;
+    int startWindow = 0;
+
+    if (selectedIndex >= maxVisibleItems) {
+        startWindow = selectedIndex - maxVisibleItems + 1;
+    }
+
+    // Clear list tracking area inside bounds (Y: 45 to Y: 195)
+    tft.fillRect(0, 45, tft.width(), 150, BLACK);
+
+    int printCount = 0;
+    for (int i = startWindow; i < fileCount && printCount < maxVisibleItems; i++) {
+        // Safe Y calculation safely tucked between UI elements
+        tft.setCursor(30, 65 + (printCount * 35)); 
         if (i == selectedIndex) {
             tft.setTextColor(BLACK, PURPLE); 
             tft.print(F(" > "));
@@ -99,18 +121,24 @@ void updateSelection() {
             tft.print(F("   "));
         }
         tft.println(fileNames[i]);
+        printCount++;
     }
 }
 
 void showMenu() {
     inMenu = true;
     tft.fillScreen(BLACK);
+    
+    // Header Bounds
     tft.fillRect(0, 0, tft.width(), 45, PURPLE);
     tft.setCursor(55, 15);
     tft.setTextColor(WHITE);
     tft.setTextSize(2);
     tft.println(F("OPEN STORY"));
+    
     updateSelection();
+    
+    // Footer Bounds 
     tft.fillRect(0, tft.height()-45, tft.width(), 45, PURPLE);
     tft.setCursor(75, tft.height()-30);
     tft.println(F("NEXT BOOK"));
@@ -143,7 +171,6 @@ void waitForTouch(bool reading) {
                     showMenu();
                     return;
                 } else { 
-                    // Record position for the NEW page before clearing
                     pageStartPos = bookFile.position(); 
                     tft.fillScreen(BLACK);
                     tft.setCursor(10, 40); 
@@ -152,8 +179,13 @@ void waitForTouch(bool reading) {
                     return;
                 }
             } else {
-                if (vPos > 500) { openBook(); return; } 
-                else { selectedIndex = (selectedIndex + 1) % fileCount; updateSelection(); }
+                if (vPos > 500) { 
+                    openBook(); 
+                    return; 
+                } else { 
+                    selectedIndex = (selectedIndex + 1) % fileCount; 
+                    updateSelection(); 
+                }
             }
             while (ts.getPoint().z > 150) { pinMode(XM, OUTPUT); pinMode(YP, OUTPUT); }
             delay(400); 
